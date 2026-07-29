@@ -1,8 +1,13 @@
--- Deobfuscated from the MoonSec V3 wrapper in Untitled-1.txt.
--- MoonSec metadata/anti-tamper scaffolding was removed; this is the payload logic.
-
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+
+local function safeCall(label, callback)
+    local ok, err = pcall(callback)
+    if not ok then
+        warn(("[NavyTycoon:%s] %s"):format(label, tostring(err)))
+    end
+    return ok
+end
 
 local function ownedTycoons()
     local tycoons = {}
@@ -55,7 +60,7 @@ end
 function Cash()
     spawn(function()
         while _G.Cash do
-            pcall(function()
+            safeCall("Cash", function()
                 for _, tycoon in pairs(ownedTycoons()) do
                     local essentials = tycoon:WaitForChild("Essentials")
                     local args = { "manualpump", {} }
@@ -86,7 +91,7 @@ end
 function Button()
     spawn(function()
         while _G.Button do
-            pcall(function()
+            safeCall("Button", function()
                 for _, tycoon in pairs(ownedTycoons()) do
                     for _, button in pairs(tycoon.Buttons:GetChildren()) do
                         if button:GetAttribute("IsPassId") == false then
@@ -114,7 +119,7 @@ function Rebirth()
     spawn(function()
         while _G.Rebirth do
             wait()
-            pcall(function()
+            safeCall("Rebirth", function()
                 game:GetService("ReplicatedStorage")
                     ._ReplicationRemotes
                     .Server["ReplicatedStorage.Modules.TycoonGame.Tycoons.Utils:clientRequestRebirth"]
@@ -127,10 +132,8 @@ end
 
 function Vehicles()
     spawn(function()
-        local hitEvents = enemyVehicleHitEvents()
-
         while _G.Vehicles do
-            pcall(function()
+            safeCall("Vehicles", function()
                 local root = LocalPlayer.Character.HumanoidRootPart
                 local nearest
                 local nearestDistance = 10000
@@ -148,6 +151,15 @@ function Vehicles()
                             nearest = vehicle
                         end
                     end
+                end
+
+                if not nearest then
+                    return
+                end
+
+                local hitEvents = enemyVehicleHitEvents()
+                if #hitEvents == 0 then
+                    return
                 end
 
                 local main = nearest.Body.Main
@@ -179,10 +191,13 @@ end
 
 function all()
     spawn(function()
-        local hitEvents = enemyVehicleHitEvents()
-
         while _G.all do
-            pcall(function()
+            safeCall("all", function()
+                local hitEvents = enemyVehicleHitEvents()
+                if #hitEvents == 0 then
+                    return
+                end
+
                 local root = LocalPlayer.Character.HumanoidRootPart
 
                 for _, vehicle in pairs(workspace.Vehicles:GetChildren()) do
@@ -228,14 +243,19 @@ function Listening()
     spawn(function()
         local hitEvent = backpackOrCharacterHitEvent()
 
-        pcall(function()
+        safeCall("Listening:Sit", function()
             if LocalPlayer.Character:FindFirstChild("Humanoid") then
                 LocalPlayer.Character.Humanoid.Sit = true
             end
         end)
 
         while _G.Listening do
-            pcall(function()
+            safeCall("Listening", function()
+                hitEvent = hitEvent or backpackOrCharacterHitEvent()
+                if not hitEvent then
+                    return
+                end
+
                 for _, post in pairs(workspace.ListeningPosts:GetChildren()) do
                     if post:GetAttribute("Health") > 0 then
                         local args = {
@@ -273,15 +293,50 @@ if existing then
     existing:Destroy()
 end
 
-local library = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew"
-))()
+local libraryUrl = "https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew"
+local librarySource
 
-local window = library:CreateWindow("Navy Tycoon")
+if not safeCall("UI:Download", function()
+    librarySource = game:HttpGet(libraryUrl)
+end) then
+    return
+end
+
+if type(librarySource) ~= "string" or librarySource == "" then
+    warn("[NavyTycoon:UI:Download] empty library source")
+    return
+end
+
+local libraryFactory
+local compileError
+if not safeCall("UI:Compile", function()
+    libraryFactory, compileError = loadstring(librarySource)
+end) then
+    return
+end
+
+if not libraryFactory then
+    warn(("[NavyTycoon:UI:Compile] %s"):format(tostring(compileError)))
+    return
+end
+
+local library
+if not safeCall("UI:Initialize", function()
+    library = libraryFactory()
+end) then
+    return
+end
+
+local window
+if not safeCall("UI:CreateWindow", function()
+    window = library:CreateWindow("Navy Tycoon")
+end) then
+    return
+end
 
 window:AddToggle({
     text = "Collect Cash",
-    flag = "toggle",
+    flag = "cash_toggle",
     state = false,
     callback = function(state)
         _G.Cash = state
@@ -294,7 +349,7 @@ window:AddToggle({
 
 window:AddToggle({
     text = "Auto Buttons",
-    flag = "toggle",
+    flag = "button_toggle",
     state = false,
     callback = function(state)
         _G.Button = state
@@ -307,7 +362,7 @@ window:AddToggle({
 
 window:AddToggle({
     text = "Auto Rebirth",
-    flag = "toggle",
+    flag = "rebirth_toggle",
     state = false,
     callback = function(state)
         _G.Rebirth = state
@@ -320,7 +375,7 @@ window:AddToggle({
 
 window:AddToggle({
     text = "Destroy ListeningPosts",
-    flag = "toggle",
+    flag = "listening_toggle",
     state = false,
     callback = function(state)
         _G.Listening = state
@@ -333,7 +388,7 @@ window:AddToggle({
 
 window:AddToggle({
     text = "Attack Nearest Vehicles",
-    flag = "toggle",
+    flag = "vehicles_toggle",
     state = false,
     callback = function(state)
         _G.Vehicles = state
@@ -346,7 +401,7 @@ window:AddToggle({
 
 window:AddToggle({
     text = "Attack all Vehicles",
-    flag = "toggle",
+    flag = "all_vehicles_toggle",
     state = false,
     callback = function(state)
         _G.all = state
