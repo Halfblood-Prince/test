@@ -268,13 +268,24 @@ end
 
 function Vehicles()
     spawn(function()
-        local hitEvents = enemyVehicleHitEvents()
+        local hitEvents = {}
+
+        for _, vehicle in pairs(workspace.Vehicles:GetChildren()) do
+            if vehicle:GetAttribute("SpawnerUserId") ~= LocalPlayer.UserId then
+                for _, item in pairs(vehicle.Body:GetDescendants()) do
+                    if item.Name == "HitEvent" then
+                        table.insert(hitEvents, item)
+                    end
+                end
+            end
+        end
 
         while _G.Vehicles do
+            wait()
             safeCall("Vehicles", function()
                 local root = LocalPlayer.Character.HumanoidRootPart
                 local nearest
-                local nearestDistance = 4000
+                local nearestDistance = 3000
 
                 for _, vehicle in pairs(workspace.Vehicles:GetChildren()) do
                     if vehicle:GetAttribute("Enabled")
@@ -292,16 +303,6 @@ function Vehicles()
                 end
 
                 if not nearest then
-                    reportThrottled("Vehicles", "No enabled enemy vehicle within 4000 studs", 3)
-                    return
-                end
-
-                if #hitEvents == 0 then
-                    hitEvents = enemyVehicleHitEvents()
-                end
-
-                if #hitEvents == 0 then
-                    reportThrottled("Vehicles", "No enemy vehicle HitEvent found", 3)
                     return
                 end
 
@@ -329,7 +330,6 @@ function Vehicles()
 
                 wait()
             end)
-            wait()
         end
     end)
 end
