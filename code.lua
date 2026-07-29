@@ -268,48 +268,66 @@ end
 
 function Vehicles()
     spawn(function()
+        local hitEvents = enemyVehicleHitEvents()
+
         while _G.Vehicles do
             safeCall("Vehicles", function()
-                local character = LocalPlayer.Character
-                local root = character and character:FindFirstChild("HumanoidRootPart")
-                if not root then
-                    reportThrottled("Vehicles", "No HumanoidRootPart found", 3)
-                    return
-                end
-
+                local root = LocalPlayer.Character.HumanoidRootPart
                 local nearest
-                local nearestPart
-                local nearestDistance = math.huge
+                local nearestDistance = 4000
 
                 for _, vehicle in pairs(workspace.Vehicles:GetChildren()) do
-                    if isTargetVehicle(vehicle) then
-                        local main = vehicleMainPart(vehicle)
+                    if vehicle:GetAttribute("Enabled")
+                        and vehicle:GetAttribute("SpawnerUserId") ~= LocalPlayer.UserId
+                        and vehicle:FindFirstChild("Body")
+                        and vehicle.Body:FindFirstChild("Main") then
+                        local main = vehicle.Body.Main
+                        local distance = (main.CFrame.Position - root.Position).Magnitude
 
-                        if main then
-                            local distance = (main.Position - root.Position).Magnitude
-
-                            if distance < nearestDistance then
-                                nearestDistance = distance
-                                nearest = vehicle
-                                nearestPart = main
-                            end
+                        if distance < nearestDistance then
+                            nearestDistance = distance
+                            nearest = vehicle
                         end
                     end
                 end
 
                 if not nearest then
-                    reportThrottled("Vehicles", "No enemy vehicle found", 3)
+                    reportThrottled("Vehicles", "No enabled enemy vehicle within 4000 studs", 3)
                     return
                 end
 
-                fireVehicleHitEvents(
-                    "Vehicles",
-                    hitEventsForVehicle(nearest),
-                    nearestPart,
+                if #hitEvents == 0 then
+                    hitEvents = enemyVehicleHitEvents()
+                end
+
+                if #hitEvents == 0 then
+                    reportThrottled("Vehicles", "No enemy vehicle HitEvent found", 3)
+                    return
+                end
+
+                local main = nearest.Body.Main
+                local args = {
+                    main,
                     root,
-                    nearestDistance,
-                    nearestPart.Position
-                )
+                    {
+                        Normal = Vector3.new(
+                            -0.09811976552009583,
+                            0.8896507024765015,
+                            0.4459754526615143
+                        ),
+                        Position = root.Position,
+                        Instance = main,
+                        Material = Enum.Material.SmoothPlastic,
+                        Id = 0,
+                        Distance = nearestDistance,
+                    },
+                }
+
+                for _, remote in ipairs(hitEvents) do
+                    remote:FireServer(unpack(args))
+                end
+
+                wait()
             end)
             wait()
         end
