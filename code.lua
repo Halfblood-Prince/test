@@ -1,10 +1,39 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
+local uiLogLines = {}
+local uiLogSink
+local maxUiLogLines = 30
+
+local function pushUiLog(message)
+    table.insert(uiLogLines, tostring(message))
+
+    while #uiLogLines > maxUiLogLines do
+        table.remove(uiLogLines, 1)
+    end
+
+    if uiLogSink then
+        local ok = pcall(uiLogSink, uiLogLines)
+        if not ok then
+            uiLogSink = nil
+        end
+    end
+end
+
+local function reportError(label, err)
+    local message = ("[NavyTycoon:%s] %s"):format(tostring(label), tostring(err))
+    warn(message)
+    pushUiLog(message)
+end
+
+local function reportInfo(message)
+    print(("[NavyTycoon] %s"):format(tostring(message)))
+end
+
 local function safeCall(label, callback)
     local ok, err = pcall(callback)
     if not ok then
-        warn(("[NavyTycoon:%s] %s"):format(label, tostring(err)))
+        reportError(label, err)
     end
     return ok
 end
@@ -288,44 +317,476 @@ function Listening()
 end
 
 local coreGui = game:GetService("CoreGui")
-local existing = coreGui:FindFirstChild("ToraScript")
-if existing then
-    existing:Destroy()
+
+local function createInHouseLibrary()
+    local UserInputService = game:GetService("UserInputService")
+    local TextService = game:GetService("TextService")
+    local library = {}
+
+    local function create(className, properties)
+        local object = Instance.new(className)
+
+        for property, value in pairs(properties or {}) do
+            object[property] = value
+        end
+
+        return object
+    end
+
+    local function addCorner(parent, radius)
+        create("UICorner", {
+            CornerRadius = UDim.new(0, radius),
+            Parent = parent,
+        })
+    end
+
+    local function addStroke(parent, color, transparency)
+        create("UIStroke", {
+            Color = color,
+            Transparency = transparency or 0,
+            Thickness = 1,
+            Parent = parent,
+        })
+    end
+
+    local function getUiParent()
+        local ok, hiddenUi = pcall(function()
+            if gethui then
+                return gethui()
+            end
+        end)
+
+        if ok and hiddenUi then
+            return hiddenUi
+        end
+
+        local probe = Instance.new("Folder")
+        local canUseCoreGui = pcall(function()
+            probe.Parent = coreGui
+        end)
+        probe:Destroy()
+
+        if canUseCoreGui then
+            return coreGui
+        end
+
+        return LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    local function destroyExisting(parent, name)
+        local existing = parent and parent:FindFirstChild(name)
+        if existing then
+            existing:Destroy()
+        end
+    end
+
+    local function destroyExistingEverywhere(parent, name)
+        destroyExisting(parent, name)
+        destroyExisting(coreGui, name)
+
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            or LocalPlayer:FindFirstChild("PlayerGui")
+        destroyExisting(playerGui, name)
+    end
+
+    function library:CreateWindow(title)
+        local parent = getUiParent()
+
+        destroyExistingEverywhere(parent, "ToraScript")
+        destroyExistingEverywhere(parent, "NavyTycoonUI")
+
+        local screenGui = create("ScreenGui", {
+            Name = "NavyTycoonUI",
+            ResetOnSpawn = false,
+            Parent = parent,
+        })
+
+        pcall(function()
+            screenGui.IgnoreGuiInset = true
+            screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        end)
+
+        local root = create("Frame", {
+            BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 24, 0.5, -225),
+            Size = UDim2.new(0, 330, 0, 450),
+            Parent = screenGui,
+        })
+        addCorner(root, 8)
+        addStroke(root, Color3.fromRGB(68, 66, 62), 0.2)
+
+        local header = create("Frame", {
+            BackgroundColor3 = Color3.fromRGB(31, 31, 30),
+            BorderSizePixel = 0,
+            Size = UDim2.new(1, 0, 0, 44),
+            Parent = root,
+        })
+        addCorner(header, 8)
+
+        create("Frame", {
+            BackgroundColor3 = Color3.fromRGB(31, 31, 30),
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 0, 1, -8),
+            Size = UDim2.new(1, 0, 0, 8),
+            Parent = header,
+        })
+
+        local titleLabel = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamSemibold,
+            Position = UDim2.new(0, 14, 0, 0),
+            Size = UDim2.new(1, -70, 1, 0),
+            Text = title or "Window",
+            TextColor3 = Color3.fromRGB(242, 240, 234),
+            TextSize = 16,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = header,
+        })
+
+        local minimizeButton = create("TextButton", {
+            AutoButtonColor = false,
+            BackgroundColor3 = Color3.fromRGB(48, 48, 45),
+            BorderSizePixel = 0,
+            Font = Enum.Font.GothamSemibold,
+            Position = UDim2.new(1, -68, 0, 10),
+            Size = UDim2.new(0, 24, 0, 24),
+            Text = "-",
+            TextColor3 = Color3.fromRGB(240, 237, 230),
+            TextSize = 16,
+            Parent = header,
+        })
+        addCorner(minimizeButton, 6)
+
+        local closeButton = create("TextButton", {
+            AutoButtonColor = false,
+            BackgroundColor3 = Color3.fromRGB(95, 42, 48),
+            BorderSizePixel = 0,
+            Font = Enum.Font.GothamSemibold,
+            Position = UDim2.new(1, -36, 0, 10),
+            Size = UDim2.new(0, 24, 0, 24),
+            Text = "x",
+            TextColor3 = Color3.fromRGB(255, 235, 235),
+            TextSize = 14,
+            Parent = header,
+        })
+        addCorner(closeButton, 6)
+
+        local body = create("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 10, 0, 54),
+            Size = UDim2.new(1, -20, 1, -64),
+            Parent = root,
+        })
+
+        local controls = create("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 250),
+            Parent = body,
+        })
+
+        local controlsLayout = create("UIListLayout", {
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = controls,
+        })
+
+        local errorPanel = create("Frame", {
+            BackgroundColor3 = Color3.fromRGB(24, 24, 23),
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 0, 0, 260),
+            Size = UDim2.new(1, 0, 1, -260),
+            Parent = body,
+        })
+        addCorner(errorPanel, 8)
+        addStroke(errorPanel, Color3.fromRGB(72, 69, 63), 0.35)
+
+        create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamSemibold,
+            Position = UDim2.new(0, 10, 0, 6),
+            Size = UDim2.new(1, -20, 0, 20),
+            Text = "Errors",
+            TextColor3 = Color3.fromRGB(238, 227, 190),
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = errorPanel,
+        })
+
+        local errorScroll = create("ScrollingFrame", {
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0, 8, 0, 30),
+            ScrollBarImageColor3 = Color3.fromRGB(112, 107, 98),
+            ScrollBarThickness = 4,
+            Size = UDim2.new(1, -16, 1, -38),
+            Parent = errorPanel,
+        })
+
+        local errorText = create("TextLabel", {
+            BackgroundTransparency = 1,
+            Font = Enum.Font.Code,
+            Size = UDim2.new(1, -8, 0, 0),
+            Text = "No errors",
+            TextColor3 = Color3.fromRGB(164, 160, 151),
+            TextSize = 12,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            Parent = errorScroll,
+        })
+
+        local refreshVersion = 0
+        local function refreshErrorLog(lines)
+            if #lines == 0 then
+                errorText.Text = "No errors"
+                errorText.TextColor3 = Color3.fromRGB(164, 160, 151)
+            else
+                errorText.Text = table.concat(lines, "\n")
+                errorText.TextColor3 = Color3.fromRGB(255, 204, 204)
+            end
+
+            refreshVersion = refreshVersion + 1
+            local expectedVersion = refreshVersion
+
+            spawn(function()
+                wait()
+
+                if expectedVersion ~= refreshVersion or not screenGui.Parent then
+                    return
+                end
+
+                local textHeight = errorScroll.AbsoluteSize.Y
+                local ok, textSize = pcall(function()
+                    return TextService:GetTextSize(
+                        errorText.Text,
+                        errorText.TextSize,
+                        errorText.Font,
+                        Vector2.new(math.max(20, errorScroll.AbsoluteSize.X - 8), math.huge)
+                    )
+                end)
+
+                if ok then
+                    textHeight = math.max(textSize.Y + 6, errorScroll.AbsoluteSize.Y)
+                else
+                    textHeight = math.max((#lines * 16) + 6, errorScroll.AbsoluteSize.Y)
+                end
+
+                errorText.Size = UDim2.new(1, -8, 0, textHeight)
+                errorScroll.CanvasSize = UDim2.new(
+                    0,
+                    0,
+                    0,
+                    textHeight
+                )
+                errorScroll.CanvasPosition = Vector2.new(
+                    0,
+                    math.max(0, textHeight - errorScroll.AbsoluteSize.Y)
+                )
+            end)
+        end
+
+        uiLogSink = refreshErrorLog
+        refreshErrorLog(uiLogLines)
+
+        local window = {
+            flags = {},
+        }
+        local toggleSetters = {}
+
+        local dragging = false
+        local dragInput
+        local dragStart
+        local startPosition
+
+        header.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPosition = root.Position
+
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+
+        header.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and input == dragInput then
+                local delta = input.Position - dragStart
+                root.Position = UDim2.new(
+                    startPosition.X.Scale,
+                    startPosition.X.Offset + delta.X,
+                    startPosition.Y.Scale,
+                    startPosition.Y.Offset + delta.Y
+                )
+            end
+        end)
+
+        local minimized = false
+        local expandedSize = root.Size
+        minimizeButton.MouseButton1Click:Connect(function()
+            minimized = not minimized
+            body.Visible = not minimized
+            root.Size = minimized and UDim2.new(0, 330, 0, 44) or expandedSize
+            minimizeButton.Text = minimized and "+" or "-"
+        end)
+
+        function window:AddToggle(options)
+            options = options or {}
+
+            local row = create("Frame", {
+                BackgroundColor3 = Color3.fromRGB(29, 29, 28),
+                BorderSizePixel = 0,
+                LayoutOrder = #toggleSetters + 1,
+                Size = UDim2.new(1, 0, 0, 34),
+                Parent = controls,
+            })
+            addCorner(row, 7)
+            addStroke(row, Color3.fromRGB(61, 58, 53), 0.5)
+
+            local track = create("TextButton", {
+                AutoButtonColor = false,
+                BackgroundColor3 = Color3.fromRGB(66, 64, 59),
+                BorderSizePixel = 0,
+                Position = UDim2.new(0, 10, 0.5, -10),
+                Size = UDim2.new(0, 42, 0, 20),
+                Text = "",
+                Parent = row,
+            })
+            addCorner(track, 10)
+
+            local knob = create("Frame", {
+                BackgroundColor3 = Color3.fromRGB(235, 240, 248),
+                BorderSizePixel = 0,
+                Position = UDim2.new(0, 2, 0, 2),
+                Size = UDim2.new(0, 16, 0, 16),
+                Parent = track,
+            })
+            addCorner(knob, 8)
+
+            local labelButton = create("TextButton", {
+                AutoButtonColor = false,
+                BackgroundTransparency = 1,
+                Font = Enum.Font.Gotham,
+                Position = UDim2.new(0, 60, 0, 0),
+                Size = UDim2.new(1, -68, 1, 0),
+                Text = options.text or options.flag or "Toggle",
+                TextColor3 = Color3.fromRGB(232, 229, 220),
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = row,
+            })
+
+            local state = options.state == true
+            local flag = options.flag
+            local callback = options.callback
+
+            local function paint()
+                if state then
+                    track.BackgroundColor3 = Color3.fromRGB(42, 173, 119)
+                    knob.Position = UDim2.new(1, -18, 0, 2)
+                    row.BackgroundColor3 = Color3.fromRGB(24, 35, 30)
+                else
+                    track.BackgroundColor3 = Color3.fromRGB(66, 64, 59)
+                    knob.Position = UDim2.new(0, 2, 0, 2)
+                    row.BackgroundColor3 = Color3.fromRGB(29, 29, 28)
+                end
+            end
+
+            local function setState(nextState)
+                nextState = nextState == true
+
+                if state == nextState then
+                    return
+                end
+
+                state = nextState
+
+                if flag then
+                    window.flags[flag] = state
+                end
+
+                paint()
+
+                if callback then
+                    local ok, err = pcall(callback, state)
+                    if not ok then
+                        reportError("Toggle:" .. tostring(labelButton.Text), err)
+                    end
+                end
+            end
+
+            paint()
+            if flag then
+                window.flags[flag] = state
+            end
+
+            track.MouseButton1Click:Connect(function()
+                setState(not state)
+            end)
+
+            labelButton.MouseButton1Click:Connect(function()
+                setState(not state)
+            end)
+
+            table.insert(toggleSetters, setState)
+            return row
+        end
+
+        function window:AddLabel(options)
+            options = options or {}
+
+            local label = create("TextLabel", {
+                BackgroundTransparency = 1,
+                Font = Enum.Font.Gotham,
+                LayoutOrder = #toggleSetters + 20,
+                Size = UDim2.new(1, 0, 0, 24),
+                Text = options.text or "",
+                TextColor3 = Color3.fromRGB(149, 160, 176),
+                TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = controls,
+            })
+
+            return label
+        end
+
+        function window:LogError(message)
+            pushUiLog(message)
+        end
+
+        function window:Init()
+            refreshErrorLog(uiLogLines)
+        end
+
+        closeButton.MouseButton1Click:Connect(function()
+            for _, setState in ipairs(toggleSetters) do
+                setState(false)
+            end
+
+            uiLogSink = nil
+            screenGui:Destroy()
+        end)
+
+        return window
+    end
+
+    return library
 end
 
-local libraryUrl = "https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew"
-local librarySource
-
-if not safeCall("UI:Download", function()
-    librarySource = game:HttpGet(libraryUrl)
-end) then
-    return
-end
-
-if type(librarySource) ~= "string" or librarySource == "" then
-    warn("[NavyTycoon:UI:Download] empty library source")
-    return
-end
-
-local libraryFactory
-local compileError
-if not safeCall("UI:Compile", function()
-    libraryFactory, compileError = loadstring(librarySource)
-end) then
-    return
-end
-
-if not libraryFactory then
-    warn(("[NavyTycoon:UI:Compile] %s"):format(tostring(compileError)))
-    return
-end
-
-local library
-if not safeCall("UI:Initialize", function()
-    library = libraryFactory()
-end) then
-    return
-end
+local library = createInHouseLibrary()
 
 local window
 if not safeCall("UI:CreateWindow", function()
@@ -340,7 +801,7 @@ window:AddToggle({
     state = false,
     callback = function(state)
         _G.Cash = state
-        print("Cash: " .. tostring(state))
+        reportInfo("Cash: " .. tostring(state))
         if state then
             Cash()
         end
@@ -353,7 +814,7 @@ window:AddToggle({
     state = false,
     callback = function(state)
         _G.Button = state
-        print("Button: " .. tostring(state))
+        reportInfo("Button: " .. tostring(state))
         if state then
             Button()
         end
@@ -366,7 +827,7 @@ window:AddToggle({
     state = false,
     callback = function(state)
         _G.Rebirth = state
-        print("Rebirth: " .. tostring(state))
+        reportInfo("Rebirth: " .. tostring(state))
         if state then
             Rebirth()
         end
@@ -379,7 +840,7 @@ window:AddToggle({
     state = false,
     callback = function(state)
         _G.Listening = state
-        print("Listening: " .. tostring(state))
+        reportInfo("Listening: " .. tostring(state))
         if state then
             Listening()
         end
@@ -392,7 +853,7 @@ window:AddToggle({
     state = false,
     callback = function(state)
         _G.Vehicles = state
-        print("Vehicles: " .. tostring(state))
+        reportInfo("Vehicles: " .. tostring(state))
         if state then
             Vehicles()
         end
@@ -405,7 +866,7 @@ window:AddToggle({
     state = false,
     callback = function(state)
         _G.all = state
-        print("all: " .. tostring(state))
+        reportInfo("all: " .. tostring(state))
         if state then
             all()
         end
@@ -413,7 +874,7 @@ window:AddToggle({
 })
 
 window:AddLabel({
-    text = "YouTube: Tora IsMe",
+    text = "UI: In-house",
 })
 
 window:Init()
